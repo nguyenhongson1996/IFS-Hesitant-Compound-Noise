@@ -1,0 +1,63 @@
+import argparse
+from src.common.consts import GlueTask, override_train_sample_ratio
+from src.common.seed_utils import set_seed
+from src.trainer.mtdnn_trainer import MTDNNNoisyTrainer
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Baseline: MT-DNN with task-label noise")
+    parser.add_argument("--model", default="bert-base-uncased")
+    parser.add_argument("--model_name", default="baseline_mtdnn")
+    parser.add_argument("--tasks", nargs="+", default=["MRPC", "RTE", "COLA"])
+    parser.add_argument("--epsilon_t", type=float, default=0.2)
+    parser.add_argument("--class_noise_rho", type=float, default=0.0,
+                        help="Class-flip probability conditional on task-noisy.")
+    parser.add_argument("--class_noise_rho_indep", type=float, default=0.0,
+                        help="Independent class-flip probability conditional on "
+                             "task being CORRECT (decoupled annotator error).")
+    parser.add_argument("--sst2_ratio", type=float, default=None,
+                        help="Override SST-2 train subsampling ratio (default from TRAIN_SAMPLE_RATIOS=0.1). Set to 0.5 for the imbalance study.")
+    parser.add_argument("--noise_seed", type=int, default=42)
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--num_epochs", type=int, default=10)
+    parser.add_argument("--weight_decay", type=float, default=0.0)
+    parser.add_argument("--scheduler_type", default="linear")
+    parser.add_argument("--warmup_ratio", type=float, default=0.0)
+    parser.add_argument("--max_gradient_clip", type=float, default=1.0)
+    parser.add_argument("--lambda_other", type=float, default=1.0)
+    parser.add_argument("--out_dir", default="baseline_mtdnn")
+    parser.add_argument("--max_batches", type=int, default=None,
+                        help="Limit batches per epoch (smoke test).")
+    args = parser.parse_args()
+    if args.sst2_ratio is not None:
+        override_train_sample_ratio(GlueTask.SST2, args.sst2_ratio)
+    set_seed(args.noise_seed)
+
+    trainer = MTDNNNoisyTrainer(
+        model_name_or_path=args.model,
+        task_name=args.model_name,
+        tasks=[GlueTask[t] for t in args.tasks],
+        epsilon_t=args.epsilon_t,
+        class_noise_rho=args.class_noise_rho,
+        class_noise_rho_indep=args.class_noise_rho_indep,
+        warmup_epochs=args.num_epochs,
+        noise_seed=args.noise_seed,
+        do_blindly_decode=True,
+        lambda_other=args.lambda_other,
+    )
+    trainer.train(
+        num_epochs=args.num_epochs,
+        batch_size=args.batch_size,
+        weight_decay=args.weight_decay,
+        scheduler_type=args.scheduler_type,
+        warmup_ratio=args.warmup_ratio,
+        max_gradient_clip=args.max_gradient_clip,
+        out_dir=args.out_dir,
+        lr=1e-4,
+        max_batches=args.max_batches,
+    )
+
+
+if __name__ == "__main__":
+    main()
